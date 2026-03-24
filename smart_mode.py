@@ -68,6 +68,8 @@ from ffmpeg_processing import detect_video_scene_changes, get_video_duration
 # Import UI content for presets
 from ui_content import SMART_PRESETS_CONFIG as SMART_PRESETS
 
+GPU_INIT_ERROR = None
+
 # GPU Support
 try:
     import cupy as cp
@@ -81,6 +83,9 @@ try:
     print(f"   Python: {python_info}")
     
     try:
+        device_count = cp.cuda.runtime.getDeviceCount()
+        if device_count < 1:
+            raise RuntimeError("No CUDA devices detected")
         device = cp.cuda.Device()
         props = cp.cuda.runtime.getDeviceProperties(device.id)
         gpu_name = props['name'].decode('utf-8')
@@ -88,8 +93,12 @@ try:
         print(f"   GPU: {gpu_name}")
         print(f"   CUDA Runtime: {cuda_version}")
     except Exception as e:
-        print(f"   GPU: Available (name detection failed)")
-        print(f"   Error: {e}")
+        GPU_AVAILABLE = False
+        GPU_INIT_ERROR = str(e)
+        print("CuPy detected, but CUDA runtime is not usable - falling back to CPU")
+        print(f"   Using: {cuda_info}")
+        print(f"   Python: {python_info}")
+        print(f"   Error: {GPU_INIT_ERROR}")
 except ImportError:
     GPU_AVAILABLE = False
     cp = None
@@ -97,6 +106,18 @@ except ImportError:
         print(f"⚠️  CuPy not available - using CPU only (Portable Python)")
     else:
         print(f"⚠️  CuPy not available - using CPU only")
+
+# Validate that the CUDA runtime is actually usable, not just importable.
+if GPU_AVAILABLE and cp is not None:
+    try:
+        device_count = cp.cuda.runtime.getDeviceCount()
+        if device_count < 1:
+            raise RuntimeError("No CUDA devices detected")
+    except Exception as e:
+        GPU_AVAILABLE = False
+        GPU_INIT_ERROR = str(e)
+        print("CuPy detected, but CUDA runtime is not usable - falling back to CPU")
+        print(f"   Error: {GPU_INIT_ERROR}")
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -474,6 +495,8 @@ def get_gpu_info() -> str:
         except Exception as e:
             cuda_source = "Portable CUDA" if USING_PORTABLE_CUDA else "System CUDA"
             return f"GPU Available ({cuda_source})"
+    if GPU_INIT_ERROR:
+        return f"Unavailable ({GPU_INIT_ERROR})"
     return "No GPU"
 
 
