@@ -1,7 +1,6 @@
-/bin/
+bin/
 __pycache__/
 .vscode/
-/temp/
-/output/
-PR_DESCRIPTION.md
-TEST_TODO.md
+temp/
+output/
+dev/
