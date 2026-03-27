@@ -85,19 +85,12 @@ public sealed partial class MainWindow : Window
         playbackRenderGrid.Children.Add(renderSection);
         stack.Children.Add(CreateCard(playbackRenderGrid));
 
-        var statusPanel = new StackPanel { Spacing = 8 };
-        statusPanel.Children.Add(CreateText("Render log", 20, SemiBoldWeight));
-        var statusBox = new TextBox
-        {
-            AcceptsReturn = true,
-            IsReadOnly = true,
-            MinHeight = 220,
-            TextWrapping = TextWrapping.Wrap,
-            VerticalContentAlignment = VerticalAlignment.Top,
-        };
-        Bind(statusBox, TextBox.TextProperty, nameof(MainViewModel.StatusText));
-        statusPanel.Children.Add(statusBox);
-        stack.Children.Add(CreateCard(statusPanel));
+        var logsGrid = CreateTwoColumnGrid();
+        logsGrid.Children.Add(CreateLogSection("Render log", nameof(MainViewModel.StatusText), useMonospace: false));
+        var debugLogSection = CreateLogSection("Debug output", nameof(MainViewModel.DebugLogText), useMonospace: true);
+        Grid.SetColumn(debugLogSection, 1);
+        logsGrid.Children.Add(debugLogSection);
+        stack.Children.Add(CreateCard(logsGrid));
 
         var previewPanel = new StackPanel { Spacing = 8 };
         previewPanel.Children.Add(CreateText("Latest output", 20, SemiBoldWeight));
@@ -351,6 +344,30 @@ public sealed partial class MainWindow : Window
         var body = new TextBlock { TextWrapping = TextWrapping.WrapWholeWords };
         Bind(body, TextBlock.TextProperty, bindingPath);
         panel.Children.Add(body);
+        return panel;
+    }
+
+    private StackPanel CreateLogSection(string heading, string bindingPath, bool useMonospace)
+    {
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(CreateText(heading, 20, SemiBoldWeight));
+
+        var textBox = new TextBox
+        {
+            AcceptsReturn = true,
+            IsReadOnly = true,
+            MinHeight = 240,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalContentAlignment = VerticalAlignment.Top,
+        };
+
+        if (useMonospace)
+        {
+            textBox.FontFamily = new FontFamily("Consolas");
+        }
+
+        Bind(textBox, TextBox.TextProperty, bindingPath);
+        panel.Children.Add(textBox);
         return panel;
     }
 

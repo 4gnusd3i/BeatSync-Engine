@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Text;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using BeatSync.Desktop.Models;
 using BeatSync.Desktop.Services;
@@ -13,6 +15,8 @@ public sealed class MainViewModel : BindableBase
         new("ProRes 422 Proxy", "prores_proxy"),
     ];
 
+    private readonly DispatcherQueue? _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+    private readonly StringBuilder _debugLogBuilder = new();
     private PythonBridgeService? _bridge;
     private CancellationTokenSource? _inspectionCts;
     private bool _runtimeInitialized;
@@ -37,6 +41,7 @@ public sealed class MainViewModel : BindableBase
     private string _runtimeSummaryText = "Probing the portable Python runtime...";
     private string _sourceSummaryText = "Choose the song and clip folder for this render.";
     private string _statusText = "Starting BeatSync Desktop...";
+    private string _debugLogText = "Backend debug output will appear here.";
     private string? _previewPath;
     private string _previewPlaceholderText = "After a render, the latest browser-playable preview appears here.";
     private IReadOnlyList<OptionItem> _processingModes = FallbackProcessingModes;
@@ -291,6 +296,12 @@ public sealed class MainViewModel : BindableBase
         private set => SetProperty(ref _statusText, value);
     }
 
+    public string DebugLogText
+    {
+        get => _debugLogText;
+        private set => SetProperty(ref _debugLogText, value);
+    }
+
     public string? PreviewPath
     {
         get => _previewPath;
@@ -330,13 +341,16 @@ public sealed class MainViewModel : BindableBase
         try
         {
             _bridge = new PythonBridgeService(RepoLocator.LocateRepoRoot());
-            var runtime = await _bridge.ProbeRuntimeAsync();
+            ResetDebugLog("Runtime probe output will appear here.");
+            var runtimeCommand = await _bridge.ProbeRuntimeAsync(onStandardErrorLine: AppendDebugLogLine);
+            var runtime = runtimeCommand.Payload;
             RuntimeSummaryText = FormatRuntimeSummary(runtime);
             MaximumParallelWorkers = runtime.MaxParallelWorkers;
             ParallelWorkers = runtime.DefaultParallelWorkers;
             ProcessingModes = BuildProcessingModes(runtime.SupportedProcessingModes);
             ProcessingMode = runtime.DefaultProcessingMode;
             StatusText = FormatReadyStatus(runtime);
+            EnsureDebugLogFallback("Portable runtime initialized with no backend debug output.");
             await UpdateRecommendedOutputFilenameAsync();
             _runtimeInitialized = true;
             await RefreshSourceInspectionAsync();
@@ -347,6 +361,10 @@ public sealed class MainViewModel : BindableBase
             SourceSummaryText = "Source inspection is unavailable until the backend can be reached.";
             StatusText = $"Startup failed: {ex.Message}";
             PreviewPlaceholderText = "The backend is unavailable, so no preview can be loaded.";
+            if (ex is BridgeCommandException bridgeException)
+            {
+                SetDebugLog(bridgeException.StandardError, "The backend failed before it produced any debug output.");
+            }
         }
         finally
         {
@@ -370,6 +388,7 @@ public sealed class MainViewModel : BindableBase
 
         SetBusyState(true, "Rendering");
         StatusText = "Creating...";
+        ResetDebugLog("Backend render output will appear here.");
 
         try
         {
@@ -392,16 +411,24 @@ public sealed class MainViewModel : BindableBase
                 CustomFps = customFps,
             };
 
-            var result = await _bridge.RenderAsync(request);
-            StatusText = result.StatusText;
+            var result = await _bridge.RenderAsync(request, onStandardErrorLine: AppendDebugLogLine);
+            StatusText = result.Payload.StatusText;
+            EnsureDebugLogFallback("The render completed with no backend debug output.");
 
-            var previewPath = FirstExistingPath(result.PreviewPath, result.OutputPath);
+            var previewPath = FirstExistingPath(result.Payload.PreviewPath, result.Payload.OutputPath);
             PreviewPath = previewPath;
             PreviewPlaceholderText = previewPath is null
                 ? "The backend completed, but no playable preview file was returned."
                 : $"Loaded preview from {Path.GetFileName(previewPath)}";
 
             await RefreshSourceInspectionAsync();
+        }
+        catch (BridgeCommandException ex)
+        {
+            PreviewPath = null;
+            PreviewPlaceholderText = "The render failed before a preview could be loaded.";
+            StatusText = $"Render failed: {ex.Message}";
+            SetDebugLog(ex.StandardError, "The backend failed before it produced any debug output.");
         }
         catch (Exception ex)
         {
@@ -461,8 +488,8 @@ public sealed class MainViewModel : BindableBase
 
         try
         {
-            var inspection = await _bridge.InspectSourcesAsync(AudioPath, VideoFolder, cancellationToken);
-            SourceSummaryText = FormatSourceSummary(inspection);
+            var inspection = await _bridge.InspectSourcesAsync(AudioPath, VideoFolder, cancellationToken: cancellationToken);
+            SourceSummaryText = FormatSourceSummary(inspection.Payload);
         }
         catch (Exception ex)
         {
@@ -609,5 +636,72 @@ public sealed class MainViewModel : BindableBase
             "prores_proxy" => "ProRes 422 Proxy",
             _ => mode,
         };
+    }
+
+    private void ResetDebugLog(string placeholder)
+    {
+        RunOnUiThread(() =>
+        {
+            _debugLogBuilder.Clear();
+            DebugLogText = placeholder;
+        });
+    }
+
+    private void EnsureDebugLogFallback(string fallback)
+    {
+        RunOnUiThread(() =>
+        {
+            if (_debugLogBuilder.Length == 0)
+            {
+                DebugLogText = fallback;
+            }
+        });
+    }
+
+    private void SetDebugLog(string? logText, string fallback)
+    {
+        RunOnUiThread(() =>
+        {
+            _debugLogBuilder.Clear();
+
+            if (!string.IsNullOrWhiteSpace(logText))
+            {
+                _debugLogBuilder.Append(logText.Trim());
+                DebugLogText = _debugLogBuilder.ToString();
+                return;
+            }
+
+            DebugLogText = fallback;
+        });
+    }
+
+    private void AppendDebugLogLine(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return;
+        }
+
+        RunOnUiThread(() =>
+        {
+            if (_debugLogBuilder.Length > 0)
+            {
+                _debugLogBuilder.AppendLine();
+            }
+
+            _debugLogBuilder.Append(line);
+            DebugLogText = _debugLogBuilder.ToString();
+        });
+    }
+
+    private void RunOnUiThread(Action action)
+    {
+        if (_dispatcherQueue is not null && !_dispatcherQueue.HasThreadAccess)
+        {
+            _dispatcherQueue.TryEnqueue(() => action());
+            return;
+        }
+
+        action();
     }
 }

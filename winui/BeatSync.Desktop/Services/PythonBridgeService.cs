@@ -6,6 +6,19 @@ using BeatSync.Desktop.Models;
 
 namespace BeatSync.Desktop.Services;
 
+public sealed record BridgeCommandResult<T>(T Payload, string StandardError);
+
+public sealed class BridgeCommandException : InvalidOperationException
+{
+    public BridgeCommandException(string message, string standardError)
+        : base(message)
+    {
+        StandardError = standardError;
+    }
+
+    public string StandardError { get; }
+}
+
 public sealed class PythonBridgeService
 {
     private readonly string _repoRoot;
@@ -24,10 +37,19 @@ public sealed class PythonBridgeService
         _bridgeScript = Path.Combine(repoRoot, "beatsync_bridge.py");
     }
 
-    public Task<RuntimeStatusDto> ProbeRuntimeAsync(CancellationToken cancellationToken = default)
-        => RunJsonCommandAsync<RuntimeStatusDto>("probe-runtime", cancellationToken: cancellationToken);
+    public Task<BridgeCommandResult<RuntimeStatusDto>> ProbeRuntimeAsync(
+        Action<string>? onStandardErrorLine = null,
+        CancellationToken cancellationToken = default)
+        => RunJsonCommandAsync<RuntimeStatusDto>(
+            "probe-runtime",
+            onStandardErrorLine: onStandardErrorLine,
+            cancellationToken: cancellationToken);
 
-    public Task<SourceInspectionDto> InspectSourcesAsync(string audioPath, string videoFolder, CancellationToken cancellationToken = default)
+    public Task<BridgeCommandResult<SourceInspectionDto>> InspectSourcesAsync(
+        string audioPath,
+        string videoFolder,
+        Action<string>? onStandardErrorLine = null,
+        CancellationToken cancellationToken = default)
         => RunJsonCommandAsync<SourceInspectionDto>(
             "inspect-sources",
             startInfo =>
@@ -37,6 +59,7 @@ public sealed class PythonBridgeService
                 startInfo.ArgumentList.Add("--video-folder");
                 startInfo.ArgumentList.Add(videoFolder ?? string.Empty);
             },
+            onStandardErrorLine: onStandardErrorLine,
             cancellationToken: cancellationToken
         );
 
@@ -54,23 +77,28 @@ public sealed class PythonBridgeService
             cancellationToken: cancellationToken
         );
 
-        return payload.RecommendedFilename;
+        return payload.Payload.RecommendedFilename;
     }
 
-    public Task<RenderResultDto> RenderAsync(RenderRequestDto request, CancellationToken cancellationToken = default)
+    public Task<BridgeCommandResult<RenderResultDto>> RenderAsync(
+        RenderRequestDto request,
+        Action<string>? onStandardErrorLine = null,
+        CancellationToken cancellationToken = default)
     {
         var requestJson = JsonSerializer.Serialize(request, _jsonOptions);
         return RunJsonCommandAsync<RenderResultDto>(
             "render",
             standardInput: requestJson,
+            onStandardErrorLine: onStandardErrorLine,
             cancellationToken: cancellationToken
         );
     }
 
-    private async Task<T> RunJsonCommandAsync<T>(
+    private async Task<BridgeCommandResult<T>> RunJsonCommandAsync<T>(
         string command,
         Action<ProcessStartInfo>? configureStartInfo = null,
         string? standardInput = null,
+        Action<string>? onStandardErrorLine = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -91,8 +119,33 @@ public sealed class PythonBridgeService
         startInfo.ArgumentList.Add(command);
         configureStartInfo?.Invoke(startInfo);
 
-        using var process = new Process { StartInfo = startInfo };
+        var stderrBuilder = new StringBuilder();
+        var stderrCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var process = new Process
+        {
+            StartInfo = startInfo,
+            EnableRaisingEvents = true,
+        };
+
+        process.ErrorDataReceived += (_, eventArgs) =>
+        {
+            if (eventArgs.Data is null)
+            {
+                stderrCompleted.TrySetResult(true);
+                return;
+            }
+
+            if (stderrBuilder.Length > 0)
+            {
+                stderrBuilder.AppendLine();
+            }
+
+            stderrBuilder.Append(eventArgs.Data);
+            onStandardErrorLine?.Invoke(eventArgs.Data);
+        };
+
         process.Start();
+        process.BeginErrorReadLine();
 
         if (standardInput is not null)
         {
@@ -102,31 +155,49 @@ public sealed class PythonBridgeService
         }
 
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
 
         await process.WaitForExitAsync(cancellationToken);
+        await stderrCompleted.Task.WaitAsync(cancellationToken);
 
         var stdout = await stdoutTask;
-        var stderr = await stderrTask;
+        var stderr = stderrBuilder.ToString();
 
         if (process.ExitCode != 0)
         {
-            var message = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
-            throw new InvalidOperationException($"Bridge command '{command}' failed: {message.Trim()}");
+            var diagnosticLog = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+            throw new BridgeCommandException(
+                BuildFailureMessage(command, stdout, stderr),
+                diagnosticLog);
         }
 
         if (string.IsNullOrWhiteSpace(stdout))
         {
-            throw new InvalidOperationException($"Bridge command '{command}' returned no JSON payload.");
+            throw new BridgeCommandException(
+                $"Bridge command '{command}' returned no JSON payload.",
+                stderr);
         }
 
         var payload = JsonSerializer.Deserialize<T>(stdout, _jsonOptions);
         if (payload is null)
         {
-            throw new InvalidOperationException($"Bridge command '{command}' returned invalid JSON: {stdout}");
+            throw new BridgeCommandException(
+                $"Bridge command '{command}' returned invalid JSON.",
+                string.IsNullOrWhiteSpace(stderr) ? stdout : stderr);
         }
 
-        return payload;
+        return new BridgeCommandResult<T>(payload, stderr);
+    }
+
+    private static string BuildFailureMessage(string command, string stdout, string stderr)
+    {
+        var detailSource = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+        var summary = detailSource
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .LastOrDefault();
+
+        return string.IsNullOrWhiteSpace(summary)
+            ? $"Bridge command '{command}' failed."
+            : $"Bridge command '{command}' failed: {summary.Trim()}";
     }
 
     private sealed class RecommendationResponse
