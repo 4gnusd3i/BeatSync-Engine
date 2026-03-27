@@ -6,6 +6,7 @@ The current workflow is local-path based. The GUI does not upload and duplicate 
 
 ## Highlights
 
+- Native WinUI 3 desktop shell backed by the portable Python engine
 - Dark, application-style Gradio workspace tuned for desktop use
 - Local-path workflow for lower disk usage and faster startup
 - Native Windows `Browse...` pickers for audio files and video folders
@@ -21,6 +22,12 @@ The current workflow is local-path based. The GUI does not upload and duplicate 
 - Boot-time GPU/NVENC runtime probing so unusable GPU paths fall back cleanly
 - Portable runtime support for Python, CUDA, and FFmpeg under `bin/`
 - Portable CUDA auto-discovery under `bin/CUDA/`, with `CUDA 12.9.x` recommended for Pascal GPUs such as the GTX 1080 Ti
+
+## Current UI Status
+
+- `winui/BeatSync.Desktop/` is the active native desktop client under development
+- `run.bat` still launches the legacy Gradio fallback during parity validation
+- The WinUI client talks to the Python backend through `beatsync_bridge.py`
 
 ## Recent Changes
 
@@ -75,9 +82,38 @@ run.bat
 
 ## Launching The App
 
+### WinUI Desktop
+
+1. Place the portable runtime files under `bin/`.
+2. Run `dev\sync_portable_runtime.ps1` after the portable Python folder is in place.
+3. Run `run_winui.bat`.
+
+### Legacy Gradio Fallback
+
 1. Place the portable runtime files under `bin/`.
 2. Run `run.bat`.
 3. The Gradio UI starts locally in your browser.
+
+## Working On Another Workstation
+
+1. Pull the branch on the target workstation.
+2. Copy or provision the portable runtime under `bin/`.
+   See `bin/README.md` for the expected layout.
+3. Sync the embedded environment:
+
+```powershell
+dev\sync_portable_runtime.ps1 -IncludeDev
+```
+
+4. Make sure the WinUI toolchain is available on that workstation.
+   The app needs a .NET SDK with WinUI support for development builds.
+5. Start the native client with:
+
+```bat
+run_winui.bat
+```
+
+`bin/` is intentionally not pushed to Git, so a pull alone does not recreate the portable runtime payload.
 
 ## CUDA Notes
 
@@ -230,10 +266,11 @@ Run `python video_processor.py -h` for the full argument list.
 
 ## Repository Notes
 
-- `bin/` is ignored by Git for local portable runtime files.
+- `bin/` is ignored by Git for local portable runtime files. `bin/README.md` is tracked so the expected layout survives a pull.
 - `.vscode/` is ignored by Git for local IDE settings.
 - Outputs are written to `output/`.
 - Temporary processing files are written to `temp/`.
+
 
 
 ## License

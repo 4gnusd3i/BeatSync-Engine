@@ -1,4 +1,8 @@
 bin/
+!bin/
+bin/*
+!bin/README.md
+winui/BeatSync.Desktop/bin/
 .dotnet/
 obj/
 __pycache__/
