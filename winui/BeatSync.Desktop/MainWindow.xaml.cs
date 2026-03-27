@@ -356,10 +356,13 @@ public sealed partial class MainWindow : Window
         {
             AcceptsReturn = true,
             IsReadOnly = true,
-            MinHeight = 240,
+            Height = 240,
             TextWrapping = TextWrapping.Wrap,
             VerticalContentAlignment = VerticalAlignment.Top,
         };
+
+        ScrollViewer.SetVerticalScrollBarVisibility(textBox, ScrollBarVisibility.Auto);
+        ScrollViewer.SetHorizontalScrollBarVisibility(textBox, ScrollBarVisibility.Disabled);
 
         if (useMonospace)
         {
