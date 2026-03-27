@@ -356,7 +356,7 @@ public sealed partial class MainWindow : Window
         {
             AcceptsReturn = true,
             IsReadOnly = true,
-            Height = 240,
+            Height = 360,
             TextWrapping = TextWrapping.Wrap,
             VerticalContentAlignment = VerticalAlignment.Top,
         };
