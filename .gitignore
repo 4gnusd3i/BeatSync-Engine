@@ -11,3 +11,4 @@ dev/*
 !dev/sync_portable_runtime.ps1
 !dev/test_bridge.py
 !dev/test_regression.py
+!dev/Plan.md
