@@ -365,6 +365,7 @@ public sealed partial class MainWindow : Window
 
         ScrollViewer.SetVerticalScrollBarVisibility(textBox, ScrollBarVisibility.Auto);
         ScrollViewer.SetHorizontalScrollBarVisibility(textBox, ScrollBarVisibility.Disabled);
+        textBox.Loaded += LogTextBox_Loaded;
         textBox.TextChanged += LogTextBox_TextChanged;
 
         if (useMonospace)
@@ -443,6 +444,14 @@ public sealed partial class MainWindow : Window
         );
     }
 
+    private void LogTextBox_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox textBox)
+        {
+            QueueScrollLogTextBoxToEnd(textBox);
+        }
+    }
+
     private void LogTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (sender is not TextBox textBox)
@@ -450,9 +459,20 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        QueueScrollLogTextBoxToEnd(textBox);
+    }
+
+    private void QueueScrollLogTextBoxToEnd(TextBox textBox)
+    {
         if (_dispatcherQueue is not null && !_dispatcherQueue.HasThreadAccess)
         {
-            _dispatcherQueue.TryEnqueue(() => ScrollLogTextBoxToEnd(textBox));
+            _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => ScrollLogTextBoxToEnd(textBox));
+            return;
+        }
+
+        if (_dispatcherQueue is not null)
+        {
+            _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => ScrollLogTextBoxToEnd(textBox));
             return;
         }
 
@@ -461,8 +481,37 @@ public sealed partial class MainWindow : Window
 
     private static void ScrollLogTextBoxToEnd(TextBox textBox)
     {
+        textBox.UpdateLayout();
+
+        if (FindDescendant<ScrollViewer>(textBox) is ScrollViewer scrollViewer)
+        {
+            scrollViewer.ChangeView(null, scrollViewer.ScrollableHeight, null, true);
+            return;
+        }
+
         var textLength = textBox.Text?.Length ?? 0;
         textBox.Select(textLength, 0);
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+    {
+        var childCount = VisualTreeHelper.GetChildrenCount(root);
+        for (var index = 0; index < childCount; index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            var descendant = FindDescendant<T>(child);
+            if (descendant is not null)
+            {
+                return descendant;
+            }
+        }
+
+        return null;
     }
 
     private async void RootScrollViewer_Loaded(object sender, RoutedEventArgs e)
