@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.IO;
 using Microsoft.UI;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -16,6 +17,7 @@ namespace BeatSync.Desktop;
 public sealed partial class MainWindow : Window
 {
     private static readonly FontWeight SemiBoldWeight = new() { Weight = 600 };
+    private readonly DispatcherQueue? _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private readonly PickerService _pickerService = new();
     private readonly MediaPlayerElement _previewPlayer = new()
     {
@@ -363,6 +365,7 @@ public sealed partial class MainWindow : Window
 
         ScrollViewer.SetVerticalScrollBarVisibility(textBox, ScrollBarVisibility.Auto);
         ScrollViewer.SetHorizontalScrollBarVisibility(textBox, ScrollBarVisibility.Disabled);
+        textBox.TextChanged += LogTextBox_TextChanged;
 
         if (useMonospace)
         {
@@ -438,6 +441,28 @@ public sealed partial class MainWindow : Window
                 UpdateSourceTrigger = updateSourceTrigger,
             }
         );
+    }
+
+    private void LogTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (sender is not TextBox textBox)
+        {
+            return;
+        }
+
+        if (_dispatcherQueue is not null && !_dispatcherQueue.HasThreadAccess)
+        {
+            _dispatcherQueue.TryEnqueue(() => ScrollLogTextBoxToEnd(textBox));
+            return;
+        }
+
+        ScrollLogTextBoxToEnd(textBox);
+    }
+
+    private static void ScrollLogTextBoxToEnd(TextBox textBox)
+    {
+        var textLength = textBox.Text?.Length ?? 0;
+        textBox.Select(textLength, 0);
     }
 
     private async void RootScrollViewer_Loaded(object sender, RoutedEventArgs e)
