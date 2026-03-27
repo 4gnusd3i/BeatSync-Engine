@@ -25,6 +25,7 @@ def probe_runtime_status() -> RuntimeStatus:
     )
     default_processing_mode = "h264_nvenc" if nvenc_available else "cpu"
     ffmpeg_status = "Portable FFmpeg" if FFMPEG_FOUND else "System FFmpeg"
+    max_parallel_workers = min(16, max(CPU_COUNT // 2, 4))
 
     return RuntimeStatus(
         python_status="Portable runtime" if runtime.using_portable_python else "System Python",
@@ -32,6 +33,8 @@ def probe_runtime_status() -> RuntimeStatus:
         ffmpeg_status=ffmpeg_status,
         ready_threads=ready_threads,
         cpu_count=CPU_COUNT,
+        default_parallel_workers=min(PARALLEL_WORKERS, max_parallel_workers),
+        max_parallel_workers=max_parallel_workers,
         gpu_available=gpu_available,
         gpu_info=get_gpu_info(),
         nvenc_available=nvenc_available,
@@ -55,4 +58,3 @@ def startup_banner() -> str:
         status.gpu_info,
         status.nvenc_available,
     )
-

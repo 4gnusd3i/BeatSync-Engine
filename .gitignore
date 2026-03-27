@@ -1,4 +1,5 @@
 bin/
+.dotnet/
 __pycache__/
 .vscode/
 temp/

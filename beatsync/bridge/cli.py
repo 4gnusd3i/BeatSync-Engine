@@ -9,6 +9,7 @@ from contextlib import redirect_stdout
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 
+from ..application.path_utils import recommend_output_filename
 from ..application.render_service import process_render
 from ..application.runtime_service import probe_runtime_status
 from ..application.source_service import inspect_sources
@@ -37,6 +38,10 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser.add_argument("--audio-path", default="")
     inspect_parser.add_argument("--video-folder", default="")
 
+    recommend_parser = subparsers.add_parser("recommend-output-name", help="Return the backend output filename recommendation.")
+    recommend_parser.add_argument("--current-filename", default="")
+    recommend_parser.add_argument("--processing-mode", required=True)
+
     render_parser = subparsers.add_parser("render", help="Run a full render request from JSON.")
     render_parser.add_argument("--request-json", default=None)
 
@@ -52,6 +57,13 @@ def main(argv: list[str] | None = None) -> int:
             payload = probe_runtime_status()
         elif args.command == "inspect-sources":
             payload = inspect_sources(args.audio_path, args.video_folder)
+        elif args.command == "recommend-output-name":
+            payload = {
+                "recommended_filename": recommend_output_filename(
+                    args.current_filename,
+                    args.processing_mode,
+                )
+            }
         else:
             raw_request = args.request_json if args.request_json else sys.stdin.read()
             request_data = json.loads(raw_request)
@@ -64,4 +76,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

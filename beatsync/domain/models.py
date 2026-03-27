@@ -12,6 +12,8 @@ class RuntimeStatus:
     ffmpeg_status: str
     ready_threads: int
     cpu_count: int
+    default_parallel_workers: int
+    max_parallel_workers: int
     gpu_available: bool
     gpu_info: str
     nvenc_available: bool
@@ -63,4 +65,3 @@ class RenderResult:
     resolved_audio_path: str | None = None
     resolved_video_paths: tuple[str, ...] = field(default_factory=tuple)
     error_text: str | None = None
-

@@ -31,6 +31,8 @@ class BridgeCliTests(unittest.TestCase):
             ffmpeg_status="Portable FFmpeg",
             ready_threads=2,
             cpu_count=8,
+            default_parallel_workers=4,
+            max_parallel_workers=4,
             gpu_available=False,
             gpu_info="CPU only",
             nvenc_available=False,
@@ -80,6 +82,30 @@ class BridgeCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["compatible_clip_count"], 2)
+
+    def test_recommend_output_name_uses_backend_rules(self):
+        if BRIDGE_IMPORT_ERROR is not None:
+            self.skipTest(f"Bridge tests skipped: {BRIDGE_IMPORT_ERROR}")
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(sys, "stdout", stdout),
+            mock.patch.object(sys, "stderr", stderr),
+        ):
+            exit_code = cli.main(
+                [
+                    "recommend-output-name",
+                    "--current-filename",
+                    "music_video.mp4",
+                    "--processing-mode",
+                    "prores_proxy",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["recommended_filename"], "music_video.mov")
 
     def test_render_reads_request_json(self):
         if BRIDGE_IMPORT_ERROR is not None:
