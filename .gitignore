@@ -5,4 +5,7 @@ temp/
 output/
 dev/*
 !dev/PR_DESCRIPTION_27.03.26.md
+!dev/audit_portable_runtime.py
+!dev/sync_portable_runtime.ps1
+!dev/test_bridge.py
 !dev/test_regression.py

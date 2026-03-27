@@ -1,0 +1,2 @@
+"""BeatSync backend package."""
+
