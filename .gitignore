@@ -9,6 +9,7 @@ __pycache__/
 .vscode/
 temp/
 output/
+test-build/
 dev/*
 !dev/PR_DESCRIPTION_27.03.26.md
 !dev/audit_portable_runtime.py
